@@ -7,44 +7,65 @@ function returnFullPath(path, fileName) {
 
 const fullPath = curry(returnFullPath);
 
+function logFile(fileName) {
+  console.log(`├──${fileName}`);
+}
+
 function logDotFiles(path) {
   fs.readdir(path, function cb(err, files) {
     if (err) {
       console.log(err);
       return;
     }
-    console.log(`dot file in ${path}: ${files}`);
+    const dotfiles = files.filter(function findDotFiles(fileName) {
+      return fileName[0] === '.';
+    });
+    console.log(path);
+    dotfiles.map(logFile);
   });
 }
 
-function isGit(path, files) {
-  return files.filter(function removeNonGit(fileName) {
-    return fileName === '.git';
-  }).map(fullPath(path));
+function getActor(path) {
+  return function actOnFileName(fileName) {
+    if (fileName === '.git') {
+      // search siblings for .env
+      logDotFiles(path);
+    } else {
+      // keep crawling path
+      crawl(`${path}/${fileName}`);
+    }
+  };
 }
 
-function notGit(path, files) {
-  return files.filter(function removeGit(fileName) {
-    return fileName !== '.git';
-  }).map(fullPath(path));
+function supressableError(err) {
+  if (err) {
+    switch(err.code) {
+    case 'ENOTDIR':
+    case 'ENOENT':
+      return true;
+    default:
+      return false;
+    }
+  }
+  return false;
 }
 
-function read(path) {
+function crawl(path) {
   fs.readdir(path, function cb(err, files) {
-    if (err && err.code === 'ENOTDIR') {
+    if (supressableError(err)) {
       return;
     } else if (err) {
-      console.log(err)
+      console.log(err);
       return;
     } else {
-      isGit(path, files).map(logDotFiles);
-      notGit(path, files).map(read);
+      const handleFiles = getActor(path);
+      files.map(handleFiles);
     }
   });
 }
 
 function start() {
-  read(process.argv[2] || '/');
+  crawl(process.argv[2] || '/');
 }
 
 start();
