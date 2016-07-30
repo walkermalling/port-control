@@ -12,7 +12,7 @@ function logFile(fileName) {
 }
 
 function logDotFiles(path) {
-  fs.readdir(path, function cb(err, files) {
+  fs.readdir(path, function callBack(err, files) {
     if (err) {
       console.log(err);
       return;
@@ -25,8 +25,8 @@ function logDotFiles(path) {
   });
 }
 
-function getActor(path) {
-  return function actOnFileName(fileName) {
+function getHandler(path) {
+  return function scanFileName(fileName) {
     if (fileName === '.git') {
       // search siblings for .env
       logDotFiles(path);
@@ -37,29 +37,24 @@ function getActor(path) {
   };
 }
 
-function supressableError(err) {
-  if (err) {
-    switch(err.code) {
-    case 'ENOTDIR':
-    case 'ENOENT':
-      return true;
-    default:
-      return false;
-    }
+function handleReadError(err, path) {
+  if (err && err.code === 'ENOTDIR' || err.code === 'ENOENT') {
+    // no need to log this
+  } else {
+    console.log({
+      warning: 'Error tyring to read directory',
+      path: path,
+      code: err.code,
+    });
   }
-  return false;
 }
 
 function crawl(path) {
-  fs.readdir(path, function cb(err, files) {
-    if (supressableError(err)) {
-      return;
-    } else if (err) {
-      console.log(err);
-      return;
+  fs.readdir(path, function callBack(err, files) {
+    if (err) {
+      handleReadError(err, path);
     } else {
-      const handleFiles = getActor(path);
-      files.map(handleFiles);
+      files.map(getHandler(path));
     }
   });
 }
