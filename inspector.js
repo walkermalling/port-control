@@ -5,6 +5,70 @@ const lineFilter = require('./fileSearch');
 
 const filter = R.filter;
 const compose = R.compose;
+const curry = R.curry;
+const last = R.last;
+
+/* string transforms */
+
+const splitString = curry(function split(str, delimiter) {
+  if (typeof str === 'string' && typeof delimiter === 'string') {
+    return str.split(delimiter);
+  } else {
+    return [];
+  }
+});
+
+function getFileNameFromPath(filePath) {
+  if (typeof filePath !== 'string') {
+    console.log(`warning: expected string for filePath: ${filePath}`);
+    return '';
+  }
+  return compose(safeString, last, splitPath)(filePath);
+}
+
+const composeFilePath = curry(function joinStrings(path, fileName) {
+  return `${path}/${fileName}`;
+});
+
+/* stupid type fallbacks */
+
+const safe = curry(function safeTypeReturn(val, type) {
+  if (typeof type !== 'string') {
+    console.log(`warning: expected string for type: ${type}`);
+    return undefined;
+  } else {
+    const baseCase;
+    switch (type) {
+    case 'string':
+      baseCase = '';
+      break;
+    case 'number':
+      baseCase = 0;
+      break;
+    case 'object':
+      baseCase = {};
+      break;
+    case 'array':
+      baseCase = [];
+      break;
+    default:
+      baseCase = undefined;
+    }
+    if (typeof val !== type) {
+      return baseCase;
+    } else {
+      return val;
+    }
+  }
+});
+
+/* curried */
+
+const splitPath = splitString('/');
+const safeString = safe('string');
+                              
+
+/* functions */
 
 function logResults(results) {
   console.log(`\nDIR: ${results.path}`);
@@ -18,65 +82,54 @@ function logResults(results) {
   });
 }
 
-function generateFileScan(path, fileName) {
+function generateFileScan(filePath) {
   return function scanFile (callBack) {
-    const filePath = `${path}/${fileName}`;
     fs.readFile(filePath, { encoding: 'utf-8' }, function taskCallBack(err, data) {
       if (err) {
         callBack({ warning: `Error reading ${filePath}`, code: err.code });
       } else {
-        const scanResult = lineFilter(data);
-        callBack(null, scanResult);
+        callBack(null, {
+          file: filePath,
+          line: lineFilter(data),
+        });
       }
     });
   };
 }
 
-function generateFileScanTasks(path, files) {
-  const tasks = {};
-  files.forEach(function generateTask(fileName) {
-    tasks[fileName] = generateFileScan(path, fileName);
-  });
-  return tasks;
+function removeZeroMatch(resultObj) {
+  return resultObj && resultObj.line && resultObj.line.length;
 }
 
-function inspectDotFiles(path, files) {
-  var directoryResults = {
-    path: path,
-    files: {},
-  };
-
-  const tasks = generateFileScanTasks(path, files);
-
+function inspectDotFiles(filePaths) {
+  const tasks = filePaths.map(generateFileScan);
   async.parallel(tasks, function asyncDone(err, results) {
     if (err) {
-      console.log(`error processing ${path}`);
+      console.log({ message: `error processing dir`, err: err });
     } else {
-      Object.keys(results).forEach(function assignScanResults(key) {
-        if (results[key] && results[key].length) {
-          directoryResults.files[key] = {
-            scanResult: results[key],
-          };
-        }
-      });
-      logResults(directoryResults);
+      (function sideEffect() {
+        compose(R.map(console.log), filter(removeZeroMatch))(results);
+      })();
     }
   });
+}
+
+function findDotFiles(fileName) {
+  return fileName[0] === '.' &&
+    fileName[fileName.length - 1] !== '~' &&
+    fileName.indexOf('.git') === -1 &&
+    fileName.indexOf('ignore') === -1;
 }
 
 function lookForProjectDotfiles(path) {
   fs.readdir(path, function callBack(err, files) {
     if (err) {
       console.log(err);
-      return;
+    } else {
+      inspectDotFiles(
+        compose(R.map(composeFilePath(path)), filter(findDotFiles))(files)
+      );
     }
-    const dotfiles = files.filter(function findDotFiles(fileName) {
-      return fileName[0] === '.' &&
-        fileName[fileName.length - 1] !== '~' &&
-        fileName.indexOf('.git') === -1 &&
-        fileName.indexOf('ignore') === -1;
-    });
-    inspectDotFiles(path, dotfiles);
   });
 }
 
